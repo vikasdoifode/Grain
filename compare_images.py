@@ -6,16 +6,39 @@ import tensorflow as tf
 from scipy.spatial.distance import cosine
 import serial  # For Serial Communication
 import time
+import sys
+import logging
 
-
-# 🔇 Suppress TensorFlow logs
+# 🔹 Suppress TensorFlow info/warnings/errors
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-tf.get_logger().setLevel('ERROR')
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
-# ✅ Fix Unicode errors in Windows terminal
+# Suppress specific TensorFlow logs
+tf.get_logger().setLevel(logging.ERROR)
+
+# Redirect stderr to suppress unwanted logs
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="tensorflow")
+
+def filter_tensorflow_warnings(record):
+    """Filter out specific TensorFlow log messages."""
+    log_msg = record.getMessage()
+    return not (
+        "oneDNN custom operations are on" in log_msg or 
+        "This TensorFlow binary is optimized to use available CPU instructions" in log_msg
+    )
+
+# Apply the log filter
+class TFLogFilter(logging.Filter):
+    def filter(self, record):
+        return filter_tensorflow_warnings(record)
+
+tf.get_logger().addFilter(TFLogFilter())
+
+# Fix UnicodeEncodeError on Windows
 sys.stdout.reconfigure(encoding='utf-8')
 
-# ✅ Set upload directory
+print("✔ TensorFlow logs suppressed. Only important results will be shown.")
 UPLOAD_DIR = sys.argv[1] if len(sys.argv) > 1 else "C:/Users/DELL/OneDrive/Desktop/Grain/uploads"
 print(f"📂 Using upload directory: {UPLOAD_DIR}")
 
@@ -109,6 +132,7 @@ else:
     ser.write(b'LED_OFF\n')  # Send signal to NodeMCU
 
 ser.close()  # Close Serial Connection
+
 
 
 sys.exit(0)  # ✅ Ensures the script exits after running once
