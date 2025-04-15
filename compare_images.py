@@ -3,42 +3,55 @@ import sys
 import numpy as np
 import cv2
 from scipy.spatial.distance import cosine
-import logging
 
-# Suppress TensorFlow info/warnings/errors (optional if you're not using TensorFlow anymore)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
-
-# Suppress specific warnings
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning, module="tensorflow")
-
-# Fix UnicodeEncodeError on Windows
-sys.stdout.reconfigure(encoding='utf-8')
-
-print("✔ TensorFlow logs suppressed. Only important results will be shown.")
-UPLOAD_DIR = sys.argv[1] if len(sys.argv) > 1 else "./uploads"
-print(f"📂 Using upload directory: {UPLOAD_DIR}")
-
-def extract_features(img_path):
-    """Extracts deep features using a simple method."""
+# Function to extract features using ORB
+def extract_orb_features(img_path):
+    """Extract ORB keypoints and descriptors from the image."""
     if not os.path.exists(img_path):
         print(f"❌ Error: File not found - {img_path}")
         return None
 
-    img = cv2.imread(img_path)
+    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
     if img is None:
         print(f"❌ Error: Could not read image - {img_path}")
         return None
 
-    print(f"✔ Image successfully loaded: {img_path}")
+    # Initialize ORB detector
+    orb = cv2.ORB_create()
 
-    img = cv2.resize(img, (224, 224)) / 255.0  # Resize & normalize
-    img = np.expand_dims(img, axis=0)  # Add batch dimension
+    # Detect keypoints and descriptors
+    keypoints, descriptors = orb.detectAndCompute(img, None)
 
-    # Simple feature extraction (using pixel values for comparison, for simplicity)
-    features = img.flatten()  # Flatten the image into a 1D array (basic feature extraction)
-    return features
+    if descriptors is None:
+        print(f"❌ Error: Could not extract descriptors - {img_path}")
+        return None
+
+    return descriptors
+
+# Function to compute similarity using the number of matches
+def compare_images(img1, img2):
+    """Compare two images based on their ORB descriptors."""
+    descriptors1 = extract_orb_features(img1)
+    descriptors2 = extract_orb_features(img2)
+
+    if descriptors1 is None or descriptors2 is None:
+        return None
+
+    # Use BFMatcher to find the best matches between descriptors
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches = bf.match(descriptors1, descriptors2)
+
+    # Sort matches based on distance (lower is better)
+    matches = sorted(matches, key=lambda x: x.distance)
+
+    # Compute the ratio of good matches
+    similarity = len(matches) / min(len(descriptors1), len(descriptors2))
+
+    return similarity
+
+# Directory containing the images to compare
+UPLOAD_DIR = sys.argv[1] if len(sys.argv) > 1 else "./uploads"
+print(f"📂 Using upload directory: {UPLOAD_DIR}")
 
 # ✅ Get the latest 2 images (For direct comparison)
 image_files = sorted(
@@ -52,44 +65,29 @@ if len(image_files) < 2:
     print("📸 Not enough images for comparison.")
     sys.exit(0)
 
-# ✅ Extract features
-features = []
-filenames = []
+# Extract features and compare
+img1 = os.path.join(UPLOAD_DIR, image_files[0])
+img2 = os.path.join(UPLOAD_DIR, image_files[1])
 
-for img_file in image_files:
-    img_path = os.path.join(UPLOAD_DIR, img_file)
-    feature_vector = extract_features(img_path)
-    if feature_vector is not None:
-        features.append(feature_vector)
-        filenames.append(img_file)
-    else:
-        print(f"❌ Could not extract features from {img_file}")
+similarity = compare_images(img1, img2)
 
-# 🚨 Ensure valid feature vectors
-if len(features) < 2:
+if similarity is None:
     print("❌ Error: Could not extract features from both images.")
     sys.exit(0)
 
-# ✅ Compute Cosine Similarity (Better than Euclidean)
-similarity = 1 - cosine(features[0], features[1])
-
-# 🚀 Use a Fixed Threshold for Stability
-THRESHOLD = 0.95  # Adjust based on sensitivity
+# Define a similarity threshold
+THRESHOLD = 0.6  # Adjust based on sensitivity
 
 print("\n🔍 Image Comparison Result:")
-if similarity is not None:
-    print(f"📸 {filenames[0]} ↔ {filenames[1]} : Similarity = {similarity:.3f}")
-    print(f"⚙️ Threshold: {THRESHOLD:.2f}")
+print(f"📸 {image_files[0]} ↔ {image_files[1]} : Similarity = {similarity:.3f}")
+print(f"⚙️ Threshold: {THRESHOLD:.2f}")
 
-    # 🚨 Detect changes based on threshold
-    if similarity < THRESHOLD:
-        print("⚠️ Significant change detected between the two images!")
-        SIGNIFICANT_CHANGE_DETECTED = True
-    else:
-        print("✅ No significant differences detected.")
-        SIGNIFICANT_CHANGE_DETECTED = False
+# 🚨 Detect changes based on threshold
+if similarity < THRESHOLD:
+    print("⚠️ Significant change detected between the two images!")
+    SIGNIFICANT_CHANGE_DETECTED = True
 else:
-    print("❌ Error: Similarity calculation failed.")
+    print("✅ No significant differences detected.")
+    SIGNIFICANT_CHANGE_DETECTED = False
 
-print("🚀 Script execution complete. Exiting now...")
 sys.exit(0)  # ✅ Ensures the script exits after running once
