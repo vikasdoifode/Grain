@@ -1,116 +1,70 @@
 import os
 import sys
-import numpy as np
 import cv2
-import tensorflow as tf
-from scipy.spatial.distance import cosine
-import time
-import logging
+import numpy as np
 
-# 🔹 Suppress TensorFlow info/warnings/errors
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+def compute_similarity(img1_path, img2_path):
+    img1 = cv2.imread(img1_path, cv2.IMREAD_GRAYSCALE)
+    img2 = cv2.imread(img2_path, cv2.IMREAD_GRAYSCALE)
 
-# Suppress specific TensorFlow logs
-tf.get_logger().setLevel(logging.ERROR)
+    if img1 is None or img2 is None:
+        print(f"❌ Failed to load one of the images.")
+        return None
 
-# Redirect stderr to suppress unwanted logs
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning, module="tensorflow")
+    orb = cv2.ORB_create()
 
-def filter_tensorflow_warnings(record):
-    """Filter out specific TensorFlow log messages."""
-    log_msg = record.getMessage()
-    return not (
-        "oneDNN custom operations are on" in log_msg or 
-        "This TensorFlow binary is optimized to use available CPU instructions" in log_msg
-    )
+    # Find keypoints and descriptors
+    kp1, des1 = orb.detectAndCompute(img1, None)
+    kp2, des2 = orb.detectAndCompute(img2, None)
 
-# Apply the log filter
-class TFLogFilter(logging.Filter):
-    def filter(self, record):
-        return filter_tensorflow_warnings(record)
+    if des1 is None or des2 is None:
+        print("❌ Could not extract descriptors.")
+        return None
 
-tf.get_logger().addFilter(TFLogFilter())
+    # Match features using Hamming distance
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches = bf.match(des1, des2)
 
-# Fix UnicodeEncodeError on Windows
-sys.stdout.reconfigure(encoding='utf-8')
+    # Sort matches by distance
+    matches = sorted(matches, key=lambda x: x.distance)
 
-print("✔ TensorFlow logs suppressed. Only important results will be shown.")
+    # Use a similarity score: number of good matches over total keypoints
+    good_match_count = len(matches)
+    max_keypoints = max(len(kp1), len(kp2))
+    similarity = good_match_count / max_keypoints if max_keypoints != 0 else 0
+
+    return similarity
+
+# Entry Point
 UPLOAD_DIR = sys.argv[1] if len(sys.argv) > 1 else "./uploads"
 print(f"📂 Using upload directory: {UPLOAD_DIR}")
 
-# ✅ Load ResNet-50 model (Pretrained on ImageNet)
-model = tf.keras.applications.MobileNetV2(
-    input_shape=(224, 224, 3),
-    weights="imagenet",
-    include_top=False,
-    pooling="avg"
-)
-
-def extract_features(img_path):
-    """Extracts deep features using ResNet-50."""
-    if not os.path.exists(img_path):
-        print(f"❌ Error: File not found - {img_path}")
-        return None
-
-    img = cv2.imread(img_path)
-    if img is None:
-        print(f"❌ Error: Could not read image - {img_path}")
-        return None
-
-    img = cv2.resize(img, (224, 224)) / 255.0  # Resize & normalize
-    img = np.expand_dims(img, axis=0)  # Add batch dimension
-
-    # Extract deep features
-    features = model.predict(img, verbose=0)
-    return features.flatten()  # Convert to 1D vector
-
-# ✅ Get the latest 2 images (For direct comparison)
+# Get the latest 2 images
 image_files = sorted(
     [f for f in os.listdir(UPLOAD_DIR) if f.lower().endswith(('.jpg', '.png', '.jpeg'))],
     key=lambda x: os.path.getmtime(os.path.join(UPLOAD_DIR, x)),
     reverse=True
 )[:2]
 
-# 🚨 Ensure we have at least 2 images for comparison
 if len(image_files) < 2:
     print("📸 Not enough images for comparison.")
     sys.exit(0)
 
-# ✅ Extract features
-features = []
-filenames = []
+# Compute similarity
+img1_path = os.path.join(UPLOAD_DIR, image_files[0])
+img2_path = os.path.join(UPLOAD_DIR, image_files[1])
 
-for img_file in image_files:
-    img_path = os.path.join(UPLOAD_DIR, img_file)
-    feature_vector = extract_features(img_path)
-    if feature_vector is not None:
-        features.append(feature_vector)
-        filenames.append(img_file)
-
-# 🚨 Ensure valid feature vectors
-if len(features) < 2:
-    print("❌ Error: Could not extract features from both images.")
-    sys.exit(0)
-
-# ✅ Compute Cosine Similarity (Better than Euclidean)
-similarity = 1 - cosine(features[0], features[1])
-
-# 🚀 Use a Fixed Threshold for Stability
-THRESHOLD = 0.95  # Adjust based on sensitivity
+similarity = compute_similarity(img1_path, img2_path)
+THRESHOLD = 0.3  # Lower threshold since ORB gives smaller values
 
 print("\n🔍 Image Comparison Result:")
-print(f"📸 {filenames[0]} ↔ {filenames[1]} : Similarity = {similarity:.3f}")
+print(f"📸 {image_files[0]} ↔ {image_files[1]} : Similarity = {similarity:.3f}")
 print(f"⚙️ Threshold: {THRESHOLD:.2f}")
 
-# 🚨 Detect changes based on threshold
 if similarity < THRESHOLD:
     print("⚠️ Significant change detected between the two images!")
-    SIGNIFICANT_CHANGE_DETECTED = True
 else:
     print("✅ No significant differences detected.")
-    SIGNIFICANT_CHANGE_DETECTED = False
 
 print("🚀 Script execution complete. Exiting now...")
-sys.exit(0)  # ✅ Ensures the script exits after running once
+sys.exit(0)
