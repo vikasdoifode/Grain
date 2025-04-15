@@ -5,7 +5,8 @@ const bodyParser = require("body-parser");
 const { spawn } = require("child_process");
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 
 // Ensure upload directory exists
