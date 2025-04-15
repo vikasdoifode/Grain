@@ -6,7 +6,6 @@ const { spawn } = require("child_process");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 
 // Ensure upload directory exists
@@ -18,11 +17,15 @@ app.use(bodyParser.raw({ type: "image/jpeg", limit: "10mb" }));
 
 // Image upload route
 app.post("/upload", (req, res) => {
+    console.log("🛬 Upload received");
+    console.log("Headers:", req.headers);
+    console.log("Body Length:", req.body?.length);
+
     if (!req.body || req.body.length === 0) {
+        console.log("❌ No image data received.");
         return res.status(400).send("No image received");
     }
 
-    // Save image
     const imagePath = path.join(UPLOAD_DIR, `image_${Date.now()}.jpg`);
     fs.writeFileSync(imagePath, req.body);
     console.log("✅ Image saved:", imagePath);
@@ -33,7 +36,7 @@ app.post("/upload", (req, res) => {
         time: fs.statSync(path.join(UPLOAD_DIR, file)).mtime.getTime()
     }));
     files.sort((a, b) => b.time - a.time);
-    
+
     while (files.length > 5) {
         let oldestFile = path.join(UPLOAD_DIR, files.pop().name);
         fs.unlinkSync(oldestFile);
@@ -50,7 +53,7 @@ app.post("/upload", (req, res) => {
         console.error(`❌ Error: ${data}`);
     });
 
-    res.status(200).send("Image received successfully!");
+    res.status(200).send("✅ Image received successfully!");
 });
 
 app.listen(PORT, () => {
