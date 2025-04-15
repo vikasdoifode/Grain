@@ -4,9 +4,7 @@ import numpy as np
 import cv2
 import tensorflow as tf
 from scipy.spatial.distance import cosine
-import serial  # For Serial Communication
 import time
-import sys
 import logging
 
 # 🔹 Suppress TensorFlow info/warnings/errors
@@ -39,7 +37,7 @@ tf.get_logger().addFilter(TFLogFilter())
 sys.stdout.reconfigure(encoding='utf-8')
 
 print("✔ TensorFlow logs suppressed. Only important results will be shown.")
-UPLOAD_DIR = sys.argv[1] if len(sys.argv) > 1 else "C:/Users/DELL/OneDrive/Desktop/Grain/uploads"
+UPLOAD_DIR = sys.argv[1] if len(sys.argv) > 1 else "./uploads"
 print(f"📂 Using upload directory: {UPLOAD_DIR}")
 
 # ✅ Load ResNet-50 model (Pretrained on ImageNet)
@@ -49,7 +47,6 @@ model = tf.keras.applications.MobileNetV2(
     include_top=False,
     pooling="avg"
 )
-
 
 def extract_features(img_path):
     """Extracts deep features using ResNet-50."""
@@ -116,23 +113,4 @@ else:
     SIGNIFICANT_CHANGE_DETECTED = False
 
 print("🚀 Script execution complete. Exiting now...")
-
-# Open Serial Port (Change COM3 to your actual NodeMCU COM port)
-ser = serial.Serial('COM4', 115200, timeout=1)
-time.sleep(2)  # Wait for connection
-
-# 🚨 Change this variable based on your detection logic
-  # Replace this with your actual detection result
-
-if SIGNIFICANT_CHANGE_DETECTED:
-    print("⚠️ Significant change detected! Sending LED_ON signal to NodeMCU...")
-    ser.write(b'LED_ON\n')  # Send signal to NodeMCU
-else:
-    print("✅ No significant change detected. Sending LED_OFF signal to NodeMCU...")
-    ser.write(b'LED_OFF\n')  # Send signal to NodeMCU
-
-ser.close()  # Close Serial Connection
-
-
-
 sys.exit(0)  # ✅ Ensures the script exits after running once
