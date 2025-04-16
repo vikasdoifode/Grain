@@ -15,7 +15,7 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 
 app.use(bodyParser.raw({ type: "image/jpeg", limit: "10mb" }));
 
-// Image upload route
+// POST /upload - Uploads image and keeps only latest 5
 app.post("/upload", (req, res) => {
     console.log("🛬 Upload received");
 
@@ -23,40 +23,48 @@ app.post("/upload", (req, res) => {
         return res.status(400).send("No image received");
     }
 
-    const imagePath = path.join(UPLOAD_DIR, `image_${Date.now()}.jpg`);
+    const filename = `image_${Date.now()}.jpg`;
+    const imagePath = path.join(UPLOAD_DIR, filename);
+
     fs.writeFileSync(imagePath, req.body);
-    console.log("✅ Image saved:", imagePath);
+    console.log("✅ Image saved:", filename);
 
-    // Keep only the latest 5 images
-    let files = fs.readdirSync(UPLOAD_DIR).map(file => ({
-        name: file,
-        time: fs.statSync(path.join(UPLOAD_DIR, file)).mtime.getTime()
-    }));
-    files.sort((a, b) => b.time - a.time);
+    // 🧹 Keep only the latest 5 images
+    const files = fs.readdirSync(UPLOAD_DIR)
+        .filter(file => /\.(jpg|jpeg|png)$/i.test(file))
+        .map(file => ({
+            name: file,
+            time: fs.statSync(path.join(UPLOAD_DIR, file)).mtime.getTime()
+        }))
+        .sort((a, b) => b.time - a.time); // Newest first
 
-    while (files.length > 5) {
-        let oldestFile = path.join(UPLOAD_DIR, files.pop().name);
-        fs.unlinkSync(oldestFile);
+    if (files.length > 5) {
+        const toDelete = files.slice(5); // Files beyond the 5 newest
+        toDelete.forEach(file => {
+            const fullPath = path.join(UPLOAD_DIR, file.name);
+            fs.unlinkSync(fullPath);
+            console.log(`🗑️ Deleted old image: ${file.name}`);
+        });
     }
 
-    // Optional: run image comparison script
+    // Optional: run Python comparison script
     const pythonProcess = spawn("python", ["compare_images.py", UPLOAD_DIR]);
 
     pythonProcess.stdout.on("data", (data) => {
-        console.log(`🔍 Image Comparison Result: ${data}`);
+        console.log(`🔍 Comparison Output: ${data}`);
     });
 
     pythonProcess.stderr.on("data", (data) => {
-        console.error(`❌ Error: ${data}`);
+        console.error(`❌ Python Error: ${data}`);
     });
 
     res.status(200).send("✅ Image received successfully!");
 });
 
-// ✅ Serve uploaded images statically
+// Serve uploaded images statically
 app.use("/uploads", express.static(UPLOAD_DIR));
 
-// ✅ API to list uploaded images
+// GET /api/images - Returns list of image URLs (newest first)
 app.get("/api/images", (req, res) => {
     fs.readdir(UPLOAD_DIR, (err, files) => {
         if (err) {
@@ -81,5 +89,5 @@ app.get("/api/images", (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
