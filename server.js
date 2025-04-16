@@ -18,11 +18,8 @@ app.use(bodyParser.raw({ type: "image/jpeg", limit: "10mb" }));
 // Image upload route
 app.post("/upload", (req, res) => {
     console.log("🛬 Upload received");
-    console.log("Headers:", req.headers);
-    console.log("Body Length:", req.body?.length);
 
     if (!req.body || req.body.length === 0) {
-        console.log("❌ No image data received.");
         return res.status(400).send("No image received");
     }
 
@@ -42,7 +39,7 @@ app.post("/upload", (req, res) => {
         fs.unlinkSync(oldestFile);
     }
 
-    // Run Python script for comparison
+    // Optional: run image comparison script
     const pythonProcess = spawn("python", ["compare_images.py", UPLOAD_DIR]);
 
     pythonProcess.stdout.on("data", (data) => {
@@ -54,6 +51,33 @@ app.post("/upload", (req, res) => {
     });
 
     res.status(200).send("✅ Image received successfully!");
+});
+
+// ✅ Serve uploaded images statically
+app.use("/uploads", express.static(UPLOAD_DIR));
+
+// ✅ API to list uploaded images
+app.get("/api/images", (req, res) => {
+    fs.readdir(UPLOAD_DIR, (err, files) => {
+        if (err) {
+            console.error("❌ Failed to list images:", err);
+            return res.status(500).json({ error: "Failed to list images" });
+        }
+
+        const sortedFiles = files
+            .filter(file => /\.(jpg|jpeg|png)$/i.test(file))
+            .map(file => ({
+                name: file,
+                time: fs.statSync(path.join(UPLOAD_DIR, file)).mtime.getTime()
+            }))
+            .sort((a, b) => b.time - a.time)
+            .map(f => f.name);
+
+        const baseUrl = req.protocol + "://" + req.get("host");
+        const imageUrls = sortedFiles.map(file => `${baseUrl}/uploads/${file}`);
+
+        res.json(imageUrls);
+    });
 });
 
 app.listen(PORT, () => {
